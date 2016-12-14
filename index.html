@@ -23,6 +23,7 @@
 
 	</style>
 	<title>Gerry</title>
+	<link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/3.18.1/build/cssreset/cssreset-min.css">
 </head>
 
 <body onload="init()">
@@ -164,19 +165,25 @@ function onUpdate()
 
 function drawText()
 {
+	var fontMult = 1;
+	if(navigator.userAgent.indexOf("Chrome") == -1 ) 
+    {
+        fontMult = 0.75;
+    }
+
 	g.ctx.fillStyle = "#222222";
 	g.ctx.textAlign = 'center';
-	g.ctx.font = Math.floor(scale * 50) + "px serif";
+	g.ctx.font = Math.floor(scale * 50 * fontMult) + "px serif";
 	g.ctx.fillText("Gerrymandering", g.canvas.width / 1.89, g.canvas.height / 18);
-	g.ctx.font = Math.floor(scale * 35) + "px serif";
+	g.ctx.font = Math.floor(scale * 35 * fontMult) + "px serif";
 	g.ctx.fillText("Left click and drag across to add district lines", g.canvas.width / 1.55, g.canvas.height / 18 * 2);
 	g.ctx.fillText("Right click and drag to erase lines", g.canvas.width / 1.715, g.canvas.height / 18 * 3);
-	g.ctx.font = Math.floor(scale * 30) + "px serif";
+	g.ctx.font = Math.floor(scale * 30 * fontMult) + "px serif";
 	g.ctx.fillText("Can you gerrymander for republicans? How about Democrats?", g.canvas.width / 1.47, g.canvas.height / 18 * 3.9);
 	g.ctx.fillText("Does the number of districts make it easier or harder?", g.canvas.width / 1.558, g.canvas.height / 18 * 4.8);
-	g.ctx.font = Math.floor(scale * 30) + "px serif";
+	g.ctx.font = Math.floor(scale * 30 * fontMult) + "px serif";
 	g.ctx.fillText("View preset victories by typing 1, 2, 3, 4", g.canvas.width / 1.71, g.canvas.height / 18 * 5.75);
-	g.ctx.font = Math.floor(scale * 40) + "px serif";
+	g.ctx.font = Math.floor(scale * 40 * fontMult) + "px serif";
 	g.ctx.fillText("Results:", g.canvas.width / 2.24, g.canvas.height / 18 * 6.8);
 
 	var counts = [];
@@ -240,7 +247,7 @@ function drawText()
 		var winner = finalCount[0] > finalCount[1] ? 0 : 1;
 
 		g.ctx.fillStyle = "#222222";
-		g.ctx.font = Math.floor(scale * 40) + "px serif";
+		g.ctx.font = Math.floor(scale * 40 * fontMult) + "px serif";
 		g.ctx.fillText((winner == 0 ? "Democrats" : "Republicans") + " win " + finalCount[winner] + " to " + finalCount[1-winner], g.canvas.width / 1.52, g.canvas.height / 18 * 6.8);
 	}
 }
