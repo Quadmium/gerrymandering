@@ -1,0 +1,466 @@
+<html>
+<head>
+	<style>
+	html, body {
+		margin: 0;
+		padding: 0;
+		background-image: url("bg.png");
+		background-repeat: repeat;
+	}
+
+	* {
+		overflow-x: hidden;
+	}
+
+	::-webkit-scrollbar { 
+    	display: none; 
+	}
+
+	#can {
+		display: block;
+		margin: auto;
+	}
+
+	</style>
+	<title>Gerry</title>
+</head>
+
+<body onload="init()">
+	<canvas width=500 height=500 id="can"></canvas>
+</body>
+
+<script src="util.js"></script>
+<script src="collision.js"></script>
+
+<script>
+
+var scale = 1;
+var mousePressed = false;
+var rightMousePressed = false;
+var map = [];
+var groupMap = [];
+var grid = [];
+var lines = [];
+var mapRows = 10, mapCols = 5;
+var maxGroupID = 0;
+
+function init()
+{
+	window.lastTime = new Date().getTime();
+	window.g = new graphics();
+
+	window.wrong = new Image();
+	wrong.src = "wrong.png";
+
+	g.canvas.addEventListener('mousemove', function(evt) {
+		window.mousePos = getMousePos(g.canvas, evt);
+		var dt = (new Date().getTime() - window.lastTime) / 1000;
+		if(dt > 0.05)
+			onUpdate();
+	}, false);
+
+	g.canvas.addEventListener('mousedown', function(evt) {
+		window.mouseClickPos = getMousePos(g.canvas, evt);
+		if(evt.which == 1)
+			window.mousePressed = true;
+		else if(evt.which == 3)
+			window.rightMousePressed = true;
+		onUpdate();
+	}, false);
+
+	g.canvas.addEventListener('mouseup', function(evt) {
+		if(evt.which == 1)
+			window.mousePressed = false;
+		else if(evt.which == 3)
+			window.rightMousePressed = false;
+		onUpdate();
+	}, false);
+
+	g.canvas.addEventListener('contextmenu', function(ev) {
+    	ev.preventDefault();
+    	return false;
+	}, false);
+
+	//unfade(document.getElementById("can"), 2);
+
+	initWorld();
+
+	onUpdate();
+	setInterval(onUpdate, 200);
+}
+
+function initWorld()
+{
+	for(var i=0; i<mapRows; i++)
+	{
+		map[i] = [];
+		groupMap[i] = [];
+	}
+
+	for(var i=0; i<mapRows; i++)
+		for(var j=0; j<mapCols; j++)
+		{
+			map[i][j] = j < 2 ? 0 : 1;
+			groupMap[i][j] = -1;
+		}
+
+	for(var i=0; i<mapRows + 1; i++)
+		grid[i] = [];
+
+	for(var i=0; i<mapRows + 1; i++)
+		for(var j=0; j<mapCols + 1; j++)
+			grid[i][j] = 0;
+
+	for(var i=0; i<(mapRows + 1) * mapCols + mapRows * (mapCols + 1); i++)
+	{
+		lines[i] = 0;
+		if(isCorner(i))
+			lines[i] = 1;
+	}
+}
+
+function unfade(element, time) {
+    var op = 0.01;  // initial opacity
+    element.style.display = 'block';
+    var timer = setInterval(function () {
+        if (op >= 1){
+            clearInterval(timer);
+        }
+        element.style.opacity = op;
+        element.style.filter = 'alpha(opacity=' + op * 100 + ")";
+        op += 0.01 / time;
+    }, 10);
+}
+
+function onUpdate()
+{
+	window.deltaTime = (new Date().getTime() - window.lastTime) / 1000;
+	window.lastTime = new Date().getTime();
+
+	if(window.innerHeight / window.innerWidth < g.height / g.width)
+	{
+		g.canvas.width = g.width / g.height * g.canvas.height;
+		g.canvas.height = window.innerHeight;
+		scale = g.canvas.height / g.height;
+	}
+	else
+	{
+		g.canvas.height = g.height / g.width * g.canvas.width;
+		g.canvas.width = window.innerWidth;
+		scale = g.canvas.width / g.width;
+	}
+
+	g.ctx.clearRect(0, 0, g.canvas.width, g.canvas.height);
+
+	handleInput();
+
+	calculateGroups();
+
+	drawMap();
+
+	drawText();
+}
+
+
+function drawText()
+{
+	g.ctx.fillStyle = "#222222";
+	g.ctx.textAlign = 'center';
+	g.ctx.font = Math.floor(scale * 50) + "px serif";
+	g.ctx.fillText("Gerrymandering", g.canvas.width / 1.89, g.canvas.height / 18);
+	g.ctx.font = Math.floor(scale * 35) + "px serif";
+	g.ctx.fillText("Left click and drag across to add district lines", g.canvas.width / 1.55, g.canvas.height / 18 * 2);
+	g.ctx.fillText("Right click and drag to erase lines", g.canvas.width / 1.715, g.canvas.height / 18 * 3);
+	g.ctx.font = Math.floor(scale * 30) + "px serif";
+	g.ctx.fillText("Can you gerrymander for republicans? How about Democrats?", g.canvas.width / 1.47, g.canvas.height / 18 * 3.9);
+	g.ctx.fillText("Does the number of districts make it easier or harder?", g.canvas.width / 1.558, g.canvas.height / 18 * 4.8);
+	g.ctx.font = Math.floor(scale * 30) + "px serif";
+	g.ctx.fillText("View preset victories by typing 1, 2, 3, 4", g.canvas.width / 1.71, g.canvas.height / 18 * 5.75);
+	g.ctx.font = Math.floor(scale * 40) + "px serif";
+	g.ctx.fillText("Results:", g.canvas.width / 2.24, g.canvas.height / 18 * 6.8);
+
+	var counts = [];
+	var election = []
+	for(var i=0; i<maxGroupID+1; i++)
+	{
+		counts.push(0);
+		election.push([0, 0]);
+	}
+
+	for(var i=0; i<groupMap.length; i++)
+		for(var j=0; j<groupMap[i].length; j++)
+		{
+			counts[groupMap[i][j]]++;
+			election[groupMap[i][j]][map[i][j]]++;
+		}
+
+	var success = true;
+	for(var i=0; i<counts.length; i++)
+		if(counts[i] != counts[0])
+			success = false;
+
+	if(!success)
+	{
+		g.ctx.drawImage(wrong, g.canvas.width / 2, g.canvas.height / 2.4, wrong.width * scale, wrong.height * scale);
+		g.ctx.fillText("All districts must have equal population!", g.canvas.width / 1.52, g.canvas.height / 18 * 16);
+	}
+	else
+	{
+		var finalCount = [0, 0];
+
+		var x = g.canvas.width / 2.5;
+		var y = g.canvas.height / 2.5;
+		var yStep = g.canvas.height / 18 * 1.5;
+		var xStep = scale * 100;
+		var maxItems = 7;
+		g.ctx.font = Math.floor(scale * 30) + "px serif";
+
+		for(var district = 0; district < counts.length; district++)
+		{
+			if(district % maxItems == 0 && district != 0)
+	    	{
+	    		x += xStep;
+	    		y -= yStep * maxItems;
+	    	}
+
+			g.ctx.beginPath();
+		    g.ctx.rect(x,y,scale * 100, scale * 40);
+		    g.ctx.fillStyle = 'hsla(' + districtColor(district) + ', ' + 100 + '%, 40%, 1)';
+		    g.ctx.fill();
+	    	g.ctx.closePath();
+
+	    	y += yStep;
+
+			g.ctx.fillStyle = "#000000";
+			g.ctx.fillText(election[district][0] + "-" + election[district][1], x + scale * 50, y - scale * 27);
+
+			finalCount[election[district][0] > election[district][1] ? 0 : 1]++;
+		}
+
+		var winner = finalCount[0] > finalCount[1] ? 0 : 1;
+
+		g.ctx.fillStyle = "#222222";
+		g.ctx.font = Math.floor(scale * 40) + "px serif";
+		g.ctx.fillText((winner == 0 ? "Democrats" : "Republicans") + " win " + finalCount[winner] + " to " + finalCount[1-winner], g.canvas.width / 1.52, g.canvas.height / 18 * 6.8);
+	}
+}
+
+function drawMap()
+{
+	window.elemSize = g.height / map.length*0.99;
+	window.startX = g.width / 4 - elemSize * map[0].length / 2;
+	window.radiusMult = 0.8;
+	window.startY = elemSize / 2 + (elemSize/2 * (1-radiusMult) / 2);
+
+	for(var i=0; i<map.length; i++)
+		for(var j=0; j<map[i].length; j++)
+		{
+			g.ctx.beginPath();
+	        g.ctx.arc(scale * (startX + elemSize * j), scale * (startY + elemSize * i), scale * elemSize / 2 * radiusMult, 0, 2 * Math.PI, false);
+	        g.ctx.fillStyle = map[i][j] == 0 ? '#3374FF' : '#E52C2C';
+	        g.ctx.fill();
+	        g.ctx.closePath();
+
+	        g.ctx.beginPath();
+		    g.ctx.rect(scale * (startX + elemSize * j - elemSize / 2), scale * (startY + elemSize * i - elemSize / 2), scale * elemSize, scale * elemSize);
+		    g.ctx.fillStyle = 'hsla(' + districtColor(groupMap[i][j]) + ', ' + 100 + '%, 40%, 0.5)';
+		    g.ctx.fill();
+	    	g.ctx.closePath();
+		}
+
+	window.startX -= elemSize / 2 + elemSize/2 * (1-radiusMult) / 2;
+	window.startY = 0; //0 - (elemSize/2 * (1-radiusMult) / 2);
+	g.ctx.fillStyle = 'black';
+	g.ctx.strokeStyle = 'black';
+	g.ctx.lineWidth = 1 * scale;
+
+	// Draws grid by drawing from node to top and to left if exists
+	for(var i=0; i<grid.length; i++)
+		for(var j=0; j<grid[i].length; j++)
+		{
+			var leftNode = j == 0 ? -1 : grid[i][j-1];
+			var topNode = i == 0 ? -1 : grid[i-1][j];
+
+			if(leftNode != -1)
+			{
+				g.ctx.beginPath();
+				g.ctx.rect(scale * (startX + elemSize * (j-1)), scale * (startY + elemSize * i), scale * elemSize + scale * elemSize / 2 * (1-radiusMult), scale * elemSize / 2 * (1-radiusMult));
+				
+				if(lines[i*mapCols + j-1])
+					g.ctx.fill();
+				else
+					g.ctx.stroke(); 
+				g.ctx.closePath();
+			}
+
+			if(topNode != -1)
+			{
+				g.ctx.beginPath();
+				g.ctx.rect(scale * (startX + elemSize * j), scale * (startY + elemSize * (i-1)), scale * elemSize / 2 * (1-radiusMult), scale * elemSize + scale * elemSize / 2 * (1-radiusMult)); 
+				
+				if(lines[(mapRows + 1) * mapCols + j*mapRows + i-1])
+					g.ctx.fill();
+				else
+					g.ctx.stroke(); 
+				g.ctx.closePath();
+			}
+		}
+}
+
+function calculateGroups()
+{
+	for(var i=0; i<map.length; i++)
+		for(var j=0; j<map[i].length; j++)
+			groupMap[i][j] = -1;
+
+	var lastGroupID = 0;
+	for(var i=0; i<map.length; i++)
+		for(var j=0; j<map[i].length; j++)
+		{
+			if(groupMap[i][j] != -1)
+				continue;
+
+			propegateGroup(lastGroupID++, i, j);
+		}
+
+	maxGroupID = lastGroupID - 1;
+}
+
+// Called on unassigned blocks, and makes them try to assign everyone around them if they can
+function propegateGroup(id, i, j)
+{
+	groupMap[i][j] = id;
+
+	var leftNode = j == 0 ? -1 : groupMap[i][j-1];
+	var topNode = i == 0 ? -1 : groupMap[i-1][j];
+	var rightNode = j == map[i].length - 1 ? -1 : groupMap[i][j+1];
+	var bottomNode = i == map.length - 1 ? -1 : groupMap[i+1][j];
+	var nodeArray = [leftNode, topNode, rightNode, bottomNode];
+
+	var leftNodeAccess = j == 0 ? 1 : lines[(mapRows + 1) * mapCols + j * mapRows + i];
+	var rightNodeAccess = j == map[i].length - 1 ? 1 : lines[(mapRows + 1) * mapCols + (j+1) * mapRows + i];
+	var topNodeAccess = i == 0 ? 1 : lines[mapCols * i + j];
+	var bottomNodeAccess = i == map.length - 1 ? 1 : lines[mapCols * (i+1) + j];
+	var nodeAccessArray = [leftNodeAccess, topNodeAccess, rightNodeAccess, bottomNodeAccess];	
+
+	for(var k=0; k < nodeArray.length; k++)
+	{
+		// 1 is a line = no access
+		// 0 is no line = access
+		if(nodeAccessArray[k] != 1 && nodeArray[k] == -1)
+		{
+			var rowDelta = k == 0 ? 0 : 
+						   k == 1 ? -1 : 
+						   k == 2 ? 0 : 
+						   k == 3 ? 1 : 0;
+		    var colDelta = k == 0 ? -1 : 
+						   k == 1 ? 0 : 
+						   k == 2 ? 1 : 
+						   k == 3 ? 0 : 0;
+
+			propegateGroup(id, i + rowDelta, j + colDelta);
+		}
+	}
+}
+
+function handleInput()
+{
+	if(mousePressed || rightMousePressed)
+	{
+		var pos = getGrid(mousePos.x, mousePos.y);
+		if(pos[0] >= 0 && pos[0] < grid.length && pos[1] >= 0 && pos[1] < grid[0].length)
+		{
+			var direction = pos[0] % 1 > pos[1] % 1;
+			//console.log(Math.abs((direction ? pos[1] : pos[0]) % 1 - 0.5));
+			if(Math.abs((direction ? pos[1] : pos[0]) % 1 - 0.5) < 0.4) return;
+
+			var setIndex;
+
+			if(direction)
+				setIndex = (mapRows + 1) * mapCols + Math.floor(pos[1]) * mapRows + Math.floor(pos[0]);
+			else
+				setIndex = Math.floor(pos[0]) * mapCols + Math.floor(pos[1]);
+
+			if(!isCorner(setIndex))
+				lines[setIndex] = rightMousePressed ? 0 : 1;
+		}
+	}
+}
+
+function getNearestGrid(x, y)
+{
+	return [ Math.round(getGrid(x,y)[0]), Math.round(getGrid(x,y)[1]) ];
+}
+
+function getGrid(x, y)
+{
+	return [ (y - scale * startY) / (scale * elemSize * map.length * 1.1) * grid.length, (x - scale * startX) / (scale * elemSize * map[0].length * 1.2) * grid[0].length ];
+}
+
+function isCorner(i)
+{
+	return i < mapCols || i >= (mapRows + 1) * mapCols - mapCols && i < (mapRows + 1) * mapCols + mapRows || 
+		   i >= (mapRows + 1) * mapCols + mapRows * (mapCols + 1) - mapRows;
+}
+
+function districtColor(id)
+{
+	return Math.floor((1+id) / (1+maxGroupID) * 360);
+}
+
+function getMousePos(canvas, evt) 
+{
+	var rect = canvas.getBoundingClientRect();
+	return new vector(evt.clientX - rect.left, evt.clientY - rect.top);
+}
+
+document.onkeydown = checkKey;
+
+function checkKey(e) 
+{
+
+    e = e || window.event;
+
+    if (e.keyCode == '49')
+    {
+    	for(var i=0; i<lines.length; i++)
+    	{
+    		lines[i] = isCorner(i) || i >= (mapRows + 1) * mapCols;
+    	}
+    }
+    else if (e.keyCode == '50')
+    {
+    	for(var i=0; i<lines.length; i++)
+    	{
+			lines[i] = isCorner(i) || i < (mapRows + 1) * mapCols && Math.floor(i / mapCols) % 2 == 0;
+    	}
+    }
+    else if (e.keyCode == '51')
+    {
+    	lines = [1, 1, 1, 1, 1,
+    			 0, 1, 1, 1, 0,
+    			 0, 0, 0, 0, 0,
+    			 0, 1, 1, 1, 0,
+    			 1, 0, 1, 1, 0,
+    			 0, 0, 1, 1, 1,
+    			 1, 0, 1, 1, 0,
+    			 0, 1, 1, 1, 0,
+    			 0, 0, 0, 0, 0,
+    			 0, 1, 1, 1, 0,
+    			 1, 1, 1, 1, 1,
+    			 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    			 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    			 0, 0, 0, 0, 1, 1, 0, 0, 0, 0,
+    			 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    			 0, 1, 1, 1, 0, 0, 1, 1, 1, 0,
+    			 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    }
+    else if (e.keyCode == '52')
+    {
+    	for(var i=0; i<lines.length; i++)
+    		lines[i] = isCorner(i);
+    }
+}
+
+</script>
+</html>
